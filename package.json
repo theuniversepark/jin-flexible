@@ -1,0 +1,16 @@
+{
+  "name": "jin-fms",
+  "version": "0.1.0",
+  "description": "피지컬AI 실증 메타팩토리 A-1 유연생산 Zone 운영 3D 시뮬레이션 (삼진산업 LT2 후드 혼류, PA Agent 기반 Cell OCS)",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node tests/run.mjs"
+  },
+  "author": "Jin Park",
+  "license": "ISC",
+  "dependencies": {
+    "aedes": "^1.2.0",
+    "mqtt": "^5.16.0"
+  }
+}

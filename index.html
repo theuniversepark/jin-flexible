@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jin-FMS</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
+  </script>
+</head>
+<body data-mode="smart">
+  <div id="viewport"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">◆</div>
+      <div>
+        <h1>Jin-FMS <small>A-1 유연생산 Zone</small></h1>
+        <p>피지컬AI 실증 메타팩토리 · 삼진산업 LT2 후드 혼류 · PA Agent 기반 복수 Cell 협업</p>
+      </div>
+    </div>
+    <nav class="tabs" id="dockTabs">
+      <button data-tab="scenario" title="공정 시나리오 6 STEP — 판정 분기·대상 장비·주요 데이터">📋 시나리오</button>
+      <button data-tab="compare" title="같은 조건 8시간 — 레거시 · 자동화 · 피지컬AI 비교">🧭 단계 비교</button>
+      <button data-tab="arch" title="제조운영시스템 4계층 · 셀 상태머신 · WP 연계">🧩 운영 계층</button>
+      <button data-tab="data" title="AAS · OPC UA PubSub over MQTT · 에피소드 내보내기">📡 데이터</button>
+      <button data-tab="design" title="유연생산 Zone 설계 요약과 근거 자료">📐 설계</button>
+    </nav>
+    <div class="seg" id="modeSeg">
+      <button data-mode="legacy">레거시</button><i class="seg-arrow">›</i>
+      <button data-mode="smart" class="on">자동화</button><i class="seg-arrow">›</i>
+      <button data-mode="dark">피지컬AI</button>
+    </div>
+    <button id="btnEstop" class="estop" title="유연생산 Zone 비상정지 — 안전 PLC 최종 권한 (발령 중에는 리셋)">🛑 비상정지</button>
+    <div class="timectl">
+      <button id="playBtn" class="icon" title="일시정지/재생 (Space)">❚❚</button>
+      <div class="seg small" id="speedSeg">
+        <button data-speed="1">1×</button><button data-speed="5" class="on">5×</button><button data-speed="20">20×</button><button data-speed="60">60×</button>
+      </div>
+      <div class="clock" id="clock" title="시뮬레이션 기준 시계 (0초 = 08:00)">08:00:00</div>
+    </div>
+  </header>
+
+  <button type="button" class="side-tgl" id="tglLeft" title="왼쪽 패널 숨기기 · [">◀</button>
+  <button type="button" class="side-tgl" id="tglRight" title="오른쪽 패널 숨기기 · ]">▶</button>
+
+  <aside class="panel left" id="leftPanel">
+    <div class="zone-card">
+      <div class="zc-h"><b>A-1 유연생산 Zone</b><small id="zoneSub">삼진산업 · LT2 Hood Ass'y</small></div>
+      <div class="zc-row"><span>혼류</span><div class="seg tiny" id="mixSeg"></div></div>
+      <form class="order" id="orderForm" autocomplete="off">
+        <input id="orderIn" placeholder="생산 지시 — 예: 후드 100개 생산 · 도어 LH 20 RH 20" />
+        <button type="submit">지시</button>
+      </form>
+      <div id="orders"></div>
+    </div>
+    <div class="mode-desc" id="modeDesc"></div>
+    <div class="kpis" id="kpis"></div>
+    <div class="chart"><div class="chart-h"><span>시간당 생산량 (UPH, 최근 10분)</span><b id="uphNow"></b></div><canvas id="chartUph" height="64"></canvas></div>
+    <div class="chart"><div class="chart-h"><span>통합 연계 성공률 (%, 목표 95)</span><b id="linkNow"></b></div><canvas id="chartLink" height="64"></canvas></div>
+    <div class="cells" id="cellList"></div>
+  </aside>
+
+  <aside class="panel right" id="rightPanel">
+    <div class="agent-h">
+      <div class="agent-avatar" id="agentAvatar">PA</div>
+      <div><b id="agentTitle">Cell OCS</b><small id="agentSub"></small></div>
+    </div>
+    <div class="agent-blocks" id="agentBlocks"></div>
+    <div class="filters" id="logFilters">
+      <button data-f="all" class="on">전체</button><button data-f="fault">이상·L1·L2</button><button data-f="agent">판단·명령</button><button data-f="ok">완료</button>
+    </div>
+    <div class="log" id="log"></div>
+    <div class="inject">
+      <div class="inj-h">시나리오 실증 — 이상 발생 <small>(다음 작업에 주입)</small></div>
+      <div class="inj-btns" id="injBtns"></div>
+    </div>
+  </aside>
+
+  <div class="views" id="views">
+    <button data-view="all">전체</button><button data-view="top">C01~C05</button><button data-view="bot">C06~C10</button><button data-view="weld">C03 용접</button><button data-view="plan">평면</button>
+  </div>
+
+  <section class="info" id="info" hidden>
+    <div class="info-h"><div><h3 id="infoTitle"></h3><small id="infoSub"></small></div><button type="button" id="infoClose">✕</button></div>
+    <div id="infoBody"></div>
+  </section>
+
+  <section class="dock" id="dock" hidden>
+    <div class="dock-h"><h3 id="dockTitle"></h3><button type="button" id="dockClose">✕</button></div>
+    <div class="dock-body" id="dockBody"></div>
+  </section>
+
+  <div id="estopBanner" hidden>🛑 비상정지 발령 — 안전 PLC가 모든 셀·AMR을 정지시켰습니다 (리셋: 비상정지 버튼)</div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
