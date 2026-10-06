@@ -1,16 +1,34 @@
 {
-  "name": "jin-fms",
-  "version": "0.1.0",
-  "description": "피지컬AI 실증 메타팩토리 A-1 유연생산 Zone 운영 3D 시뮬레이션 (삼진산업 LT2 후드 혼류, PA Agent 기반 Cell OCS)",
-  "type": "module",
+  "name": "jin-flexible",
+  "version": "1.0.0",
+  "description": "피지컬AI 실증 메타팩토리 A-1 유연생산 Zone 운영 3D 시뮬레이션 (Jin-3D 기반, 삼진산업 LT2 후드·도어 혼류)",
+  "main": "electron/main.mjs",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node tests/run.mjs"
+    "test": "node tests/flexible.mjs && node tests/estop.mjs && node tests/commands.mjs && node tests/logistics.mjs && node tests/drone.mjs && node tests/cctv.mjs && node tests/battery.mjs && node tests/net5g.mjs && node tests/pcap.mjs && node tests/odoo.mjs && node tests/integration.mjs && node tests/blender.mjs && node tests/forklift.mjs && node tests/tools.mjs && node tests/paths.mjs && node tests/hazard.mjs && node tests/impact.mjs && node tests/priority.mjs && node tests/vla.mjs && node tests/cctvrec.mjs && node tests/aasvideo.mjs && node tests/mp4.mjs && node tests/latency5g.mjs && node tests/multiagent.mjs && node tests/aasbasyx.mjs && node tests/episodekeep.mjs",
+    "app": "electron .",
+    "package": "electron-packager . Jin-flexible --platform=darwin --arch=arm64 --icon=build/icon.icns --out=dist --overwrite --app-bundle-id=kr.or.camtic.jinflexible --app-category-type=public.app-category.productivity --ignore=^/dist --ignore=^/build --ignore=^/\\.env --ignore=^/README.md --ignore=^/tests --ignore=^/blender --ignore=^/tools --ignore=^/data --ignore=^/server\\.mjs$",
+    "postpackage": "codesign --force --deep --sign - dist/Jin-flexible-darwin-arm64/Jin-flexible.app",
+    "test:ui": "electron tests/ui-scroll.cjs",
+    "blender:assets": "blender -b --python blender/build_assets.py",
+    "blender:collect": "electron tools/collect-primitives.cjs",
+    "icon": "electron build/make-icon.cjs"
   },
+  "keywords": [],
   "author": "Jin Park",
   "license": "ISC",
+  "type": "module",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
     "aedes": "^1.2.0",
     "mqtt": "^5.16.0"
-  }
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^44.5.1",
+    "mammoth": "^1.13.0",
+    "three": "^0.186.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "productName": "Jin-flexible"
 }

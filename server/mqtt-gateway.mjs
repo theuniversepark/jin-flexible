@@ -16,7 +16,7 @@ export async function startMqtt({ host = process.env.MQTT_HOST || '127.0.0.1', p
   tcp = net.createServer(broker.handle);
   await new Promise((resolve) => {
     tcp.once('error', (err) => {
-      state.error = err.code === 'EADDRINUSE' ? `포트 ${port}이(가) 이미 사용 중입니다 (다른 Jin-3D·Jin-FMS나 브로커가 실행 중일 수 있음)` : err.message;
+      state.error = err.code === 'EADDRINUSE' ? `포트 ${port}이(가) 이미 사용 중입니다 (다른 Jin-3D·Jin-flexible나 브로커가 실행 중일 수 있음)` : err.message;
       resolve();
     });
     tcp.listen(port, host, () => { Object.assign(state, { listening: true, host, port, startedAt: new Date().toISOString() }); resolve(); });
@@ -25,7 +25,7 @@ export async function startMqtt({ host = process.env.MQTT_HOST || '127.0.0.1', p
     state.bridgeUrl = bridgeUrl.replace(/\/\/[^@/]*@/, '//***@');   // 자격 증명은 상태에 노출하지 않는다
     try {
       const { connect } = await import('mqtt');
-      bridge = connect(bridgeUrl, { clientId: `jinfms-bridge-${process.pid}`, reconnectPeriod: 5000 });
+      bridge = connect(bridgeUrl, { clientId: `jinflexible-bridge-${process.pid}`, reconnectPeriod: 5000 });
       bridge.on('connect', () => { state.bridgeConnected = true; state.bridgeError = null; });
       bridge.on('close', () => { state.bridgeConnected = false; });
       bridge.on('error', (e) => { state.bridgeError = e.message; });
