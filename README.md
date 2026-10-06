@@ -1,5 +1,7 @@
 # Jin-flexible — 피지컬AI 실증 메타팩토리 A-1 유연생산 Zone 운영 시뮬레이션
 
+**▶ 웹 버전 바로 실행: https://theuniversepark.github.io/jin-flexible/** (설치 없이 브라우저에서 실행 · Claude 연동과 MQTT 발행은 맥 앱 또는 `npm start`에서)
+
 삼진산업 **LT2 후드 Ass'y**(+ 상용트럭 도어 혼류 확장)를 대상으로, 메타팩토리 **A-1 유연생산 Zone**의 셀·로봇·AMR·셀 운영통제(Cell OCS)·피지컬AI 운영을 3D로 시뮬레이션합니다. 유연생산 Zone 시뮬레이터 [Jin-3D](https://github.com/theuniversepark/jin-3d)(최종 커밋 `50dccc0`)를 그대로 기반으로 삼아, 공장 단위 기능 — 레거시 → 자동화 → 피지컬AI 3단계, 로봇·AMR 카메라 영상과 녹화·MP4·AAS 영상 링크, CCTV(사각지대 0 배치·NVR·AI 감지), Private 5G(기지국 배치·DAPS 핸드오버·지연 모델), VLA 에피소드·학습·배포, AIOS, FACOS, 오케스트레이터·상위 명령, 혼합형 다중 에이전트, KPI 영향 분석, 정비 휴머노이드·사족보행·순찰 드론, 입고·창고·출하 트럭 야드, Odoo ERP, AAS·OPC UA PubSub over MQTT·패킷 덤프 — 을 모두 유지하고, Zone만 유연생산으로 바꿨습니다.
 
 - **유연생산 Zone 설계서**: [docs/ZONE_DESIGN.md](docs/ZONE_DESIGN.md) — 근거 자료(WP6 셀 운영통제 협의자료 R3 · 유연제조 공정시나리오 도출서 · 협약용 부록 A-1 Cell 로스터 · 임시 테스트베드 구축계획), 셀 구성·동선·운영 단계·Cell OCS·KPI·로드맵·미정 사항
@@ -14,6 +16,12 @@ npm run app         # 패키징 없이 개발용으로 바로 실행
 - 내장 서버는 127.0.0.1의 고정 포트 **47620**(쓰이고 있으면 빈 포트), MQTT 브로커는 **1884** — 유연생산 Zone(Jin-3D: 47615 · 1883)과 동시에 켤 수 있습니다.
 - Claude API 키는 **⚙ 버튼 또는 ⌘,** 에서 입력합니다(macOS 키체인 암호화, `~/Library/Application Support/Jin-flexible/`).
 - 개발자 서명이 없는 ad-hoc 서명 앱입니다. 다른 Mac에서는 처음 한 번 Finder에서 우클릭 → 열기가 필요합니다.
+
+## 웹 버전 (GitHub Pages)
+설치 없이 브라우저에서 바로 실행: **https://theuniversepark.github.io/jin-flexible/**
+- `main` 브랜치 루트를 그대로 서비스합니다(`.nojekyll`). 푸시하면 1~2분 뒤 반영됩니다.
+- 서버가 없으므로 Claude 연동(운영 에이전트·자연어 공정 설계)과 MQTT 발행은 쓸 수 없고, 추론 기반 에이전트로 운영합니다(`*.github.io`에서 열면 자동으로 이 모드).
+- 3D 운영, 단계 전환, 로봇 텔레메트리, 데이터 수집, 파일 저장(JSON·XML·RDF·CSV·AutomationML, 로봇별 AASX 등)은 모두 됩니다.
 
 ## 브라우저로 실행
 ```bash
