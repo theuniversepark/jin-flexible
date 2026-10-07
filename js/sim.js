@@ -110,7 +110,7 @@ function toolSteps(sim, m, kit, inc) {
 }
 
 // 구분 적재장 적재 로봇: 사이클 3.2초(접근 → 집기 → 들어 올림 → 이동 → 내려놓기 → 복귀), 집는 순간 = 시작 후 1.05초 (factory.js 적재 로봇 키프레임과 같다)
-export const SINK_PICK = { cycle: 3.2, grab: 1.05, enter: 1.3 };   // enter: 컨베이어 끝(입구)에서 가운데 정지 구간까지 AMR이 들어가는 시간
+export const SINK_PICK = { cycle: 3.2, grab: 1.05, enter: 1.3, clear: 0.55 };   // enter: 컨베이어 끝(입구)에서 가운데 정지 구간까지 AMR이 들어가는 시간 · clear: 사이클의 이 비율이 지나면 팔이 집기 구역(AMR 위)을 벗어난다 (다른 적재 로봇이 집기 시작 가능)
 
 // 셀별 공정 불량 유형 (C06 검사에서 드러나는 NG 사유)
 const DEFECT_WHY = { sort: '부품 누락·오투입', locate: '위치편차 → 갭·단차 이탈', weld: '용접 누락·조건 이탈', seal: '실링 비드 불량', hem: '헤밍 형상 불량', fasten: '장착 갭·단차 이탈' };
@@ -536,7 +536,8 @@ export class Simulation {
     const rm = moverRadius(m);
     const segDist = (ax, az, bx, bz, px, pz) => { const vx = bx - ax, vz = bz - az, L = vx * vx + vz * vz || 1; const t = Math.max(0, Math.min(1, ((px - ax) * vx + (pz - az) * vz) / L)); return Math.hypot(px - ax - vx * t, pz - az - vz * t); };
     for (const o of this.senseList ?? this.movers) {
-      if (o === m || o.state === 'line') continue;
+      // 라인 위 AMR: 같은 AMR끼리는 컨베이어 간격으로 다루고, 셀 안(통로)은 사람·로봇이 들어가지 않는 곳이다 — 셀 사이 경로를 달리는 AMR은 사람·로봇이 피한다
+      if (o === m || (o.state === 'line' && (m.kind === 'carrier' || o.lineInfo?.where !== 'path'))) continue;
       if (o.owner === m) { const e = m.path?.[m.path.length - 1]; if (!e || Math.hypot(e.x - m.home.x, e.z - m.home.z) < 1.3) continue; }   // 자기 도크는 들어가고 나올 때만 무시 — 그 밖에는 자기 도크 기둥도 피한다
       // 나란한 도크 앞 줄(도크 앞 1.1m)을 따라 옆 도크 앞을 지나는 것은 정해진 동선 — 옆 도크를 장애물로 보지 않는다
       if (o.kind === 'dock' && m.home?.heading != null && o.heading === m.home.heading && Math.abs(Math.sin(o.heading) * (m.x - o.owner.home.x) + Math.cos(o.heading) * (m.z - o.owner.home.z) - 1.1) < 0.4 && Math.abs(dir.x * Math.sin(o.heading) + dir.z * Math.cos(o.heading)) < 0.3) continue;
@@ -544,7 +545,11 @@ export class Simulation {
       const along = rx * dir.x + rz * dir.z;
       const R = rm + moverRadius(o);
       const lateral = Math.abs(rx * dir.z - rz * dir.x);
-      let hit = along > 0.15 && along < R + 0.5 && lateral < (moverWidth(m) + moverWidth(o)) / 2 + 0.1;
+      // 상대 몸체가 내 옆 방향으로 차지하는 폭: 비스듬히·옆으로 선 긴 몸체(AMR·사족보행·지게차)는 폭이 아니라 길이 쪽이 걸린다
+      const oh = o.heading ?? 0, ca = Math.abs(Math.sin(oh) * dir.z - Math.cos(oh) * dir.x);   // 상대 진행축과 내 옆 방향 사이 |cos|
+      const oL = moverRadius(o) * 0.85, oW = moverWidth(o) / 2;   // 반길이 · 반폭 (사람·휴머노이드는 둥근 몸체 — 폭 그대로)
+      const oSide = oL > oW ? oW * Math.sqrt(Math.max(0, 1 - ca * ca)) + oL * ca : oW;
+      let hit = along > 0.15 && along < R + 0.5 && lateral < moverWidth(m) / 2 + oSide + 0.1;
       if (!hit && m.kind === 'forklift' && along > 0.15) hit = along < FORK.reach + 0.5 + moverRadius(o) && lateral < FORK.half + moverRadius(o);
       if (!hit && o.kind === 'forklift') {
         const hx = Math.sin(o.heading), hz = Math.cos(o.heading);
@@ -693,7 +698,7 @@ export class Simulation {
     }
   }
   // 적재장에서 제품을 내려놓은 AMR을 AMR 전용 복귀로로 빈 대기 자리에 돌려보낸다
-  releaseCarrier(item, def) {
+  releaseCarrier(item, def, conv = null) {
     const c = item.carrier; if (!c) return;
     item.carrier = null;
     const used = new Set(this.carriers.map((k) => k.slot).filter((k) => k != null));
@@ -705,7 +710,7 @@ export class Simulation {
     c.state = 'return'; c.slot = slot; c.path = null; c.detourPts = 0;
     // 구분 적재장: AMR은 이미 가운데 정지 구간까지 들어가 적재 로봇이 박스를 집었다 — 그 자리(진행 방향 그대로)에서 바로 복귀 (입구로 되돌아갔다 다시 들어오지 않는다)
     const inside = item.enterT != null;
-    if (inside) { const P = this.stations[this.stations.length - 1].ins[0]?.path, a = P?.[P.length - 2], b = P?.[P.length - 1]; c.x = dock.x; c.z = dock.z; if (a && b) c.heading = Math.atan2(b.x - a.x, b.z - a.z); }
+    if (inside) { const P = (conv ?? this.stations[this.stations.length - 1].ins[0])?.path, a = P?.[P.length - 2], b = P?.[P.length - 1]; c.x = dock.x; c.z = dock.z; if (a && b) c.heading = Math.atan2(b.x - a.x, b.z - a.z); }
     c.setTask('빈 AMR 복귀', [
       ...(inside ? [] : [{ go: { ...dock, aisle: 'F', name: '하역 위치' }, via: [] }, { wait: 2 }]),
       { go: park, via: amrReturnVia(dock, park) },
@@ -724,7 +729,8 @@ export class Simulation {
     if (k === 'traditional') {
       for (const st of this.stations) {
         const edge = st.type === 'source' || st.type === 'sink';
-        const op = toWorld(st.def, edge ? -2.3 : -1.0, edge ? 1.2 : 2.4);
+        // 작업자는 수작업대(셀 z 1.7~2.3) 바깥에 선다 — 헤밍 셀은 프레스(가운데 x ±1.35) 옆
+        const op = toWorld(st.def, edge ? -2.3 : st.type === 'hem' ? -1.75 : -1.0, edge ? 1.2 : 2.65);
         const w = add(`작업자-${st.id}`, st.def.inspect ? '검사원' : '작업자', op.x, op.z);
         w.station = st;
         // 로봇 대수만큼 수작업 인원 배치 (2번째부터는 라인 뒤편)
@@ -771,6 +777,8 @@ export class Simulation {
     const it = c.items, hz = this.useAMR && this.openHazards().length;
     for (let i = 0; i < it.length; i++) {
       let lim = i === 0 ? c.len : it[i - 1].s - c.spacing;
+      // 맨 앞 AMR: 셀로 들어가는 중인 앞 AMR(셀 정지·고장으로 입구 근처에 멈춰 있을 수 있다)과도 간격을 지킨다
+      if (i === 0 && this.useAMR && c.to.item?.carrier) { const e = c.path[c.path.length - 1], a = c.to.item.carrier; lim = Math.min(lim, c.len - Math.max(0, 1.9 * moverRadius(a) - Math.hypot(a.x - e.x, a.z - e.z))); }   // 차체 길이(1.6m) + 여유 — 셀 가운데(입구에서 2m)에 있으면 제한 없음
       // 운반 AMR(라인 위 고정 경로): 앞 2.5m에 현장 이벤트가 있으면 그 앞에서 정지 — 해결되면 이어서 간다 (처음 마주친 AMR이 상위 보고)
       if (hz) {
         const who = it[i].item.carrier?.id ?? `대상물 #${it[i].item.id}`;
@@ -779,8 +787,19 @@ export class Simulation {
         if (stopAt != null) { lim = Math.min(lim, stopAt); it[i].hzWait = true; it[i].hzEv = this.hazardAt(pointAt(c.path, Math.min(c.len, it[i].s + 1)).x, pointAt(c.path, Math.min(c.len, it[i].s + 1)).z, 2.6) ?? it[i].hzEv; }
         else if (it[i].hzWait) { it[i].hzWait = false; this.hazardResumed(who); }
       }
+      // 운반 AMR: 진행 방향 앞(1.4m)에 사람·로봇(지게차·휴머노이드·사족보행·작업자)이 있으면 그 자리에서 멈춰 기다린다
+      if (this.useAMR && it[i].item.carrier && this.lineBlocked(c, it[i].s)) lim = Math.min(lim, it[i].s);
       it[i].s = Math.min(it[i].s + c.speed * dt, Math.max(lim, it[i].s));
     }
+  }
+  lineBlocked(c, s) {
+    const others = this.movers.filter((m) => m.kind !== 'carrier');
+    const R = moverRadius({ kind: 'carrier' });
+    for (let d = 0.2; d <= 1.4 && s + d <= c.len + 1e-6; d += 0.3) {
+      const p = pointAt(c.path, s + d);
+      for (const m of others) if (Math.hypot(p.x - m.x, p.z - m.z) < R + moverRadius(m) + 0.1) return true;
+    }
+    return false;
   }
 
   // ── 진로 위 현장 이벤트 (해결 전): 이동체는 우회하거나 정지 대기하고, 처음 마주친 이동체가 오케스트레이터에 보고한다 ─────────────────
@@ -974,7 +993,11 @@ export class Simulation {
   updateSink(dt) {
     const sink = this.stations[this.stations.length - 1];
     if (this.cmd?.estopAll || this.cmd?.pstopAll) return;   // 비상·보호정지 중에는 적재 로봇 집기도 멈춘다 (시작한 집기는 재개 후 이어서)
-    const c = sink.in;
+    // 들어오는 경로가 여럿이면(유연생산: C06 → C08 합격 · C07 → C08 재작업) 하역 중인 경로를 마저 처리하고,
+    // 아니면 경로 끝에 도착한 작업물 가운데 먼저 투입된 것부터 받는다
+    const ready = sink.ins.filter((k) => this.frontReady(k));
+    const c = ready.find((k) => k.items[0].item.enterT != null)
+      ?? ready.sort((a, b) => a.items[0].item.id - b.items[0].item.id)[0] ?? sink.in;
     // 구분 적재장: 제품별 구역이 가득 차면 그 제품만 막힌다
     const head = c.items[0]?.item;
     if (this.zone ? head && !head.scrap && this.fgBy[head.product] >= FG_ZONE_CAP : this.fgStock >= FG_CAP) { sink.state = 'FULL'; sink.c.blocked += dt; return; }
@@ -984,7 +1007,7 @@ export class Simulation {
       // 빈 AMR(불량품을 빼낸 AMR)도 가운데 정지 구간까지 들어간 뒤 그 자리에서 복귀한다 (입구로 되돌아갔다 다시 들어오지 않게)
       if (this.zone) { head.enterT = (head.enterT ?? 0) + dt; if (head.enterT < SINK_PICK.enter) { sink.state = 'BUSY'; return; } }
       const { item } = c.items.shift();
-      this.releaseCarrier(item, sink.def);
+      this.releaseCarrier(item, sink.def, c);
     } else if (this.frontReady(c) && !occupied) {
       // 구분 적재장: 제품 쪽 적재 로봇이 AMR 위 박스를 집어 든 뒤에야 박스가 AMR에서 사라지고 AMR이 떠난다
       // (로봇 한 사이클 SINK_PICK.cycle초 — 앞 박스를 다 놓을 때까지 다음 집기는 기다림 · 집는 순간 = 사이클 시작 후 SINK_PICK.grab초)
@@ -995,8 +1018,9 @@ export class Simulation {
           head.enterT = (head.enterT ?? 0) + dt;
           if (head.enterT < SINK_PICK.enter) { sink.state = 'BUSY'; sink.lastIn = this.time; return; }
           this.sinkFree ??= {};
-          if (this.time < (this.sinkFree[P] ?? 0)) { sink.state = 'BUSY'; return; }
-          head.pickT = 0; this.sinkFree[P] = this.time + SINK_PICK.cycle;
+          // 두 적재 로봇은 같은 자리(AMR 위)에서 집는다 — 다른 로봇 팔이 박스를 들고 집기 구역을 벗어난 뒤(사이클 SINK_PICK.clear)에 내려간다
+          if (this.time < (this.sinkFree[P] ?? 0) || this.time < (this.sinkFree.zone ?? 0)) { sink.state = 'BUSY'; return; }
+          head.pickT = 0; this.sinkFree[P] = this.time + SINK_PICK.cycle; this.sinkFree.zone = this.time + SINK_PICK.clear * SINK_PICK.cycle;
           S.pickStartBy ??= {}; S.pickStartBy[P] = (S.pickStartBy[P] ?? 0) + 1;
         }
         head.pickT += dt;
@@ -1005,9 +1029,10 @@ export class Simulation {
       }
       const { item } = c.items.shift();
       if (item.defect) this.stats.escaped++; else { this.stats.good++; if (item.product) this.stats.goodBy[item.product] = (this.stats.goodBy[item.product] ?? 0) + 1; }
+      if (item.reworked) this.stats.reworkShipped = (this.stats.reworkShipped ?? 0) + 1;   // C07에서 고쳐 C08에 적재된 판넬
       if (item.product) this.fgBy[item.product]++;
       this.erp?.produced(item.product ?? 'hood');   // Odoo: 생산 입고 (구분 적재장에 들어온 수량 — 유출 불량 포함)
-      this.releaseCarrier(item, sink.def);
+      this.releaseCarrier(item, sink.def, c);
       this.fgStock++;
       sink.c.processed++;
       sink.lastIn = this.time;
@@ -1392,10 +1417,20 @@ export class Simulation {
     for (let k = 0; k < list.length && taken.has(st); k++) st = list[++q.round % list.length];
     q.round += 1; q.target = st;
     q.setTask(`순찰 점검 → ${st.name}`, [
-      { go: localLoc(st.def, st.ammrRacks?.some((r) => r.mode === 'x' && r.dir > 0 && r.side > 0) ? 1.95 : 3.0, SVC_Z, st.name) },   // 정비 위치(0.9)와 떨어진 셀 옆 모서리에서 점검 (그 모서리에 AMMR 부품 선반이 있으면 안쪽으로)
+      { go: this.patrolLoc(st) },
       { do: () => { q.scanning = st; } },
       { wait: 4, done: () => { q.scanning = null; this.patrolScan(q, st); } },
     ]);
+  }
+  // 순찰 점검 자리: 정비 위치(0.9)와 떨어진 셀 옆 모서리 (그 모서리에 AMMR 부품 선반이 있으면 안쪽으로)
+  // 운반 AMR 경로(셀 출구에서 비스듬히 빠지는 길 포함)에서 1.8m 넘게 떨어진 첫 후보 — 점검하는 동안 AMR 길을 막지 않게
+  patrolLoc(st) {
+    if (st.patrolSpot) return st.patrolSpot;
+    const segD = (p, a, b) => { const vx = b.x - a.x, vz = b.z - a.z, L = vx * vx + vz * vz || 1; const t = Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.z - a.z) * vz) / L)); return Math.hypot(p.x - a.x - vx * t, p.z - a.z - vz * t); };
+    const clear = (p) => !this.useAMR || this.conveyors.every((c) => c.path.every((b, k) => !k || segD(p, c.path[k - 1], b) > 1.8));
+    const xs = st.ammrRacks?.some((r) => r.mode === 'x' && r.dir > 0 && r.side > 0) ? [1.95, -3.0] : [3.0, -3.0, 1.95];
+    const cand = xs.map((x) => localLoc(st.def, x, SVC_Z, st.name));
+    return (st.patrolSpot = cand.find(clear) ?? cand[0]);
   }
   patrolScan(q, st) {
     st.lastScan = this.time;

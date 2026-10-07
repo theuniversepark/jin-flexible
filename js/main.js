@@ -17,6 +17,7 @@ import { renderConcept } from './concept.js';
 import { DataHub, PUBLISHER_ID, WRITER_GROUP } from './datahub.js';
 import { PacketCapture } from './pcap.js';
 import { RENDER, loadBlenderAssets, applyRenderEnv, resetRenderEnv, primKey, blenderize } from './blender.js';
+import { checkClashes, ClashLog } from './clash.js';
 import { ODOO_PRODUCTS, ODOO_LOCS } from './odoo.js';
 import { RobotCamWall, COLS as CAM_COLS } from './robotcam.js';
 import { GateView } from './gateview.js';
@@ -274,7 +275,7 @@ function updateZoneCard() {
   const S = sim.stats, prodN = sim.processing.reduce((a, st) => a + st.c.processed, 0);
   const link = prodN ? Math.max(0, 1 - (S.failures + (S.ng ?? 0) - (S.reworkOk ?? 0) + S.escaped) / prodN) : 1;
   if (amr) amr.innerHTML = `양품 후드 <b>${g.hood ?? 0}</b> · 도어 <b>${g.door ?? 0}</b> · 구분 적재 <b>${sim.fgBy.hood}</b> / <b>${sim.fgBy.door}</b>`
-    + `<br>🔗 통합 연계 성공률 <b class="${link >= 0.95 ? 'ok' : 'warn'}">${(link * 100).toFixed(1)}%</b> <small>(목표 95%)</small> · NG <b>${S.ng ?? 0}</b> → 재작업 성공 <b>${S.reworkOk ?? 0}</b>/${S.reworked ?? 0}`
+    + `<br>🔗 통합 연계 성공률 <b class="${link >= 0.95 ? 'ok' : 'warn'}">${(link * 100).toFixed(1)}%</b> <small>(목표 95%)</small> · NG <b>${S.ng ?? 0}</b> → 재작업 성공 <b>${S.reworkOk ?? 0}</b>/${S.reworked ?? 0} · 재작업품 적재 <b>${S.reworkShipped ?? 0}</b>`
     + `<br>🔄 제품 전환 <b>${S.changes ?? 0}</b>회 · 손실 <b>${Math.round((S.changeLoss ?? 0) / 60)}</b>분 · LOT <b>${sim.mode.lot ?? 1}</b>개 · 전환 1회 ${sim.mode.changeover ?? 0}초`
     + (sim.carriers.length ? `<br>🛻 AMR ${sim.carriers.length}대 · 적재 운반 <b>${n('line')}</b> · 빈차 복귀 <b>${n('return')}</b> · 대기 <b>${n('park') + n('toSrc') + n('docking') + n('atSrc')}</b>` : '<br>셀 간 물류: 고정 컨베이어 (레거시)')
     + `<br>🚚 입고 · 창고 원자재 <b>${sim.whRaw}</b>${sim.partsTracked ? ` · 부품 <b>${sim.whParts}</b>` : ''} · 입고 트럭 <b>${sim.inbound.stats.trucks}</b>대${sim.inbound.docked ? ' · 하차 중' : sim.inbound.trucks.length ? ' · 입차 중' : sim.inbound.orders.length ? ' · 발주됨' : ''}`;
@@ -1460,4 +1461,4 @@ document.getElementById('closeFacos').addEventListener('click', () => { fcModal.
 fcModal.addEventListener('click', (e) => { if (e.target === fcModal) { fcModal.classList.add('hidden'); fcView = null; } });
 fcBody.addEventListener('click', (e) => { if (e.target.closest('[data-fc-info]')) { fcAgentInfo = !fcAgentInfo; renderFacosView(true); } });
 
-window.__twin = { primKey, setRender, RENDER, openGnb: (id) => openGnb(id), cctvRec, robotRec, cctvView, epRec, get sim() { return sim; }, get agent() { return agent; }, view, ui, hub, camWall, orchView, persp, ctlP, llm };
+window.__twin = { clash: (o) => checkClashes(view, o), ClashLog, primKey, setRender, RENDER, openGnb: (id) => openGnb(id), cctvRec, robotRec, cctvView, epRec, get sim() { return sim; }, get agent() { return agent; }, view, ui, hub, camWall, orchView, persp, ctlP, llm };

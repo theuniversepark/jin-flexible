@@ -975,6 +975,7 @@ function fillBins(bins, names) {
 }
 
 // 공정 테이블 둘레에 로봇 배치 — 뒤/앞 교대로, 갠트리는 라인 방향으로 나란히
+const sim0 = (st) => st.useAMR ?? true;   // 레거시(컨베이어·사람 작업)에는 받침대가 필요 없다 — setup이 st.useAMR을 채운다
 function placeRobots(g, st) {
   const group = new THREE.Group(); g.add(group);
   const robots = [];
@@ -994,9 +995,14 @@ function placeRobots(g, st) {
     const r = makeRobot(kind, color, kind === 'gantry' ? { xr: gx } : {});
     if (kind === 'gantry') put(r.root, count === 1 ? 0 : -1.2 + (2.4 * i) / (count - 1), 0.15, 0, group);
     else {
-      const [x, z, yaw] = slots[i];
+      // 유연생산: 로봇 2대 셀(용접·정밀 장착)은 대각선으로 엇갈려 판넬 위에서 두 팔이 만나지 않게 한다
+      const diag = st.zone && count === 2 && kind !== 'ammr';
+      const [x, z, yaw] = diag ? (i ? [0.85, zz, Math.PI] : [-0.85, -zz, 0]) : slots[i];
       // AMMR은 이동 플랫폼 깊이(0.64m)만큼 통로에서 조금 더 떨어져 도킹한다
-      put(r.root, x, kind === 'ammr' ? 0.06 : 0.15, kind === 'ammr' ? Math.sign(z) * AMMR.slotZ : z, group); r.root.rotation.y = yaw;
+      // AMR 셀의 6축·협동로봇은 받침대(라이저)에 올린다 — 팔 마디가 AMR·판넬(높이 1.07m) 위로 지나가게 (공구 끝만 판넬에 닿는다)
+      const riser = st.zone && sim0(st) && (kind === 'articulated' || kind === 'cobot') ? (kind === 'cobot' ? 0.45 : 0.3) : 0;
+      put(r.root, x, (kind === 'ammr' ? 0.06 : 0.15) + riser, kind === 'ammr' ? Math.sign(z) * AMMR.slotZ : z, group); r.root.rotation.y = yaw;
+      if (riser) { put(box(0.8, riser, 0.8, MAT.dark), 0, -riser / 2, 0, r.root); put(box(0.84, 0.04, 0.84, MAT.yellow), 0, -0.02, 0, r.root); }
       r.slot = { x, z: kind === 'ammr' ? Math.sign(z) * AMMR.slotZ : z, yaw, side: Math.sign(z) };
     }
     r.phase = i * 1.3;
@@ -1014,9 +1020,10 @@ function placeRobots(g, st) {
     const side = pl.side;
     const rk = put(new THREE.Group(), pl.rack.x, 0.06, pl.rack.z, group);
     rk.rotation.y = pl.mode === 'x' ? (pl.dir < 0 ? Math.PI / 2 : -Math.PI / 2) : side > 0 ? Math.PI : 0;
-    for (const [px, pz] of [[-0.7, -0.24], [0.7, -0.24], [-0.7, 0.24], [0.7, 0.24]]) put(box(0.06, 1.75, 0.06, MAT.accent), px, 0.88, pz, rk);
+    // 2단 선반 (높이 1.2m) — AMMR 팔이 선반 위를 지나 부품을 집을 때 선반 윗판·기둥과 부딪히지 않게 (예전 3단 1.75m는 팔과 겹쳤다)
+    for (const [px, pz] of [[-0.7, -0.24], [0.7, -0.24], [-0.7, 0.24], [0.7, 0.24]]) put(box(0.06, 1.2, 0.06, MAT.accent), px, 0.6, pz, rk);
     const bins = [];
-    [0.32, 0.92, 1.52].forEach((y) => {
+    [0.32, 0.92].forEach((y) => {
       put(box(1.46, 0.04, 0.52, MAT.steel), 0, y, 0, rk);
       [0x2f6fd6, 0x3ddc84, 0xf5b82e, 0xd23b3b].forEach((c, k) => bins.push(put(box(0.3, 0.2, 0.36, std(c)), -0.51 + k * 0.34, y + 0.12, 0.02, rk)));
     });
@@ -1050,12 +1057,14 @@ function placeRobots(g, st) {
 }
 
 // ── 공정 설비 (유형별) ─────────────────
-function buildWeld(g) {
+function buildWeld(g, st, sim) {
   const fence = new THREE.Group();
-  for (const x of [-2, 2]) put(box(0.06, 1.3, 3.6, MAT.yellow), x, 0.8, 0, fence);
-  put(box(4, 0.06, 0.06, MAT.yellow), 0, 1.4, -1.8, fence);
+  // 셀 양 끝 차광 펜스: AMR 셀은 가운데에 AMR·판넬 출입구(폭 1.7m)를 비운다
+  if (sim?.useAMR) { for (const x of [-2.25, 2.25]) for (const sd of [-1, 1]) put(box(0.06, 1.3, 0.95, MAT.yellow), x, 0.8, sd * 1.32, fence); }
+  else for (const x of [-2, 2]) put(box(0.06, 1.3, 3.6, MAT.yellow), x, 0.8, 0, fence);
+  put(box(sim?.useAMR ? 4.5 : 4, 0.06, 0.06, MAT.yellow), 0, 1.4, sim?.useAMR ? -2.3 : -1.8, fence);   // 위 가로대 — AMR 셀은 로봇(z ±1.75) 뒤 셀 끝에
   g.add(fence);
-  const table = put(box(1.2, 0.8, 0.8, MAT.dark), -1.2, 0.55, 2.0, g);
+  const table = put(box(1.2, 0.8, 0.7, MAT.dark), -1.2, 0.55, 1.95, g);   // 수작업대 (z 1.6~2.3 — 작업자는 z 2.65에 선다)
   return { manualProps: [table], sparks: put(makeSparks(0xffc060, 50, 0.07), 0, 0, 0, g) };
 }
 
@@ -1194,10 +1203,12 @@ function buildFasten(g, st) {
     const a = (i / 6) * Math.PI * 2;
     spindles.push(put(cyl(0.04, 0.05, 0.4, MAT.steel, 8), Math.cos(a) * 0.32, -0.28, Math.sin(a) * 0.32, head));
   }
-  const panel = put(box(0.8, 0.6, 0.08, MAT.dark), 1.8, 1.8, 1.35, g);
+  // 토크 모니터: 로봇이 없는 모서리(유연생산 C10은 로봇이 대각선 −x·−z / +x·+z에 선다)
+  const mx = st?.zone ? -1.85 : 1.8;
+  const panel = put(box(0.8, 0.6, 0.08, MAT.dark), mx, 1.8, 1.35, g);
   const screen = emis(0x3ddc84, 1.2);
   put(box(0.7, 0.5, 0.02, screen, false), 0, 0, 0.05, panel);
-  put(box(0.06, 1.15, 0.06, MAT.dark), 1.8, 0.95, 1.35, g);
+  put(box(0.06, 1.15, 0.06, MAT.dark), mx, 0.95, 1.35, g);
   const names = cellParts(st);
   if (names) {   // 체결 부품 트레이 (볼트 · 너트 · 와셔): 너트러너 옆 작업대
     const tb = put(new THREE.Group(), 1.8, 0, -1.35, g);
@@ -1433,7 +1444,7 @@ function buildSink(g, st, sim) {
 // ── 유연생산 셀 설비 ─────────────────
 // C02 안착·보정: 지그 기준핀·클램프 4개 + 위쪽 3D 비전 포털(6DoF 위치 측정 — 스캔 빔이 판넬을 훑는다)
 function buildLocate(g) {
-  for (const [x, z] of [[-0.6, -0.42], [0.6, -0.42], [-0.6, 0.42], [0.6, 0.42]]) { put(box(0.12, 0.22, 0.12, MAT.dark), x, BELT_Y - 0.02, z, g); put(cyl(0.03, 0.03, 0.12, MAT.yellow, 10), x, BELT_Y + 0.12, z, g); }
+  // 기준핀·클램프는 AMR 지그에 달려 있다 (바닥에 고정하면 AMR이 지나가지 못한다) — 여기서는 비전 포털만
   const auto = new THREE.Group(); g.add(auto);
   for (const z of [-1.15, 1.15]) put(box(0.14, 2.5, 0.14, MAT.steel), 0.9, 1.25, z, auto);
   put(box(0.2, 0.18, 2.45, MAT.steel), 0.9, 2.5, 0, auto);
@@ -1445,9 +1456,10 @@ function buildLocate(g) {
 }
 // C03 가접·본용접: 기존 용접 셀(안전 펜스·불꽃) + 팁 드레서 · 용접 타이머 캐비닛
 function buildSpot(g, st, sim) {
-  const w = buildWeld(g);
-  put(box(0.5, 0.95, 0.45, MAT.dark), 1.95, 0.48, 1.85, g); put(box(0.3, 0.12, 0.3, MAT.orange), 1.95, 1.0, 1.85, g);   // 팁 드레서
-  for (const x of [-1.6, -0.9]) { put(box(0.55, 1.6, 0.45, std(0x4a5560)), x, 0.8, 2.15, g); put(box(0.3, 0.2, 0.02, emis(0x3ddc84, 1)), x, 1.35, 1.92, g); }   // 용접 타이머
+  const w = buildWeld(g, st, sim);
+  // 로봇은 대각선(앞 −z · 뒤 +z)으로 엇갈려 선다 — 팁 드레서·용접 타이머는 각 로봇의 빈 쪽 모서리에
+  put(box(0.45, 0.95, 0.4, MAT.dark), -1.55, 0.48, 1.95, g); put(box(0.28, 0.12, 0.28, MAT.orange), -1.55, 1.0, 1.95, g);   // 팁 드레서 (R03 쪽)
+  put(box(0.5, 1.5, 0.4, std(0x4a5560)), 1.6, 0.75, -2.05, g); put(box(0.3, 0.2, 0.02, emis(0x3ddc84, 1)), 1.6, 1.25, -1.84, g);   // 용접 타이머
   return w;
 }
 // C04 실링: 실러 드럼·펌프 · 국소 배기 후드 · 도포 중 노즐 끝 노란 비드 입자
@@ -1459,6 +1471,37 @@ function buildSeal(g) {
   const lamp = emis(0xe6f2ff, 0.6); put(box(2.2, 0.03, 0.3, lamp, false), 0, 2.88, 0, g);
   return { lamp, mist: put(makeSparks(0xf0c840, 40, 0.05), 0, 0, 0, g), manualProps: [put(box(1.0, 0.8, 0.6, MAT.dark), -1.2, 0.4, 2.0, g)] };
 }
+// C10 정밀 장착: 체결은 R08 체결 로봇(너트러너 공구)이 맡는다 — 천장 다축 너트러너 없이 토크 모니터·힌지/스트라이커·체결 부품 트레이만
+// (천장 너트러너가 셀 가운데로 내려오면 대각선의 로봇 팔과 겹친다)
+function buildMount(g, st) {
+  const panel = put(box(0.8, 0.6, 0.08, MAT.dark), -1.85, 1.8, 1.35, g);
+  const screen = emis(0x3ddc84, 1.2);
+  put(box(0.7, 0.5, 0.02, screen, false), 0, 0, 0.05, panel);
+  put(box(0.06, 1.15, 0.06, MAT.dark), -1.85, 0.95, 1.35, g);
+  const tb = put(new THREE.Group(), 1.85, 0, -1.35, g);   // 힌지·스트라이커 · 볼트·너트 트레이 (로봇이 없는 모서리)
+  put(box(0.7, 0.88, 0.45, MAT.dark), 0, 0.44, 0, tb);
+  put(box(0.7, 0.04, 0.45, MAT.steel), 0, 0.9, 0, tb);
+  const bins = ['P_Bolt', 'P_Nut', 'P_Washer'].map((_, i) => put(box(0.2, 0.05, 0.3, std(0x2f6fd6)), -0.22 + i * 0.22, 0.945, 0, tb));
+  if (cellParts(st)) fillBins(bins, ['P_Bolt', 'P_Nut', 'P_Washer']);
+  return { screen };
+}
+
+// C05 헤밍: 통로 건너편(로컬 +z)에 전용 헤밍 프레스(베드·문형 기둥·크라운·램), 로봇(−z)이 판넬을 프레스로 옮겨 헤밍 후 AMR로 돌려놓는다
+// 프레스·가드는 AMR 통로(|z| < 0.62)와 로봇 작업 반경 밖에 둔다
+function buildHem(g, st, sim) {
+  // 깊이(z 1.45~2.35)는 정비 위치(z 2.7 · 휴머노이드 반지름 0.35m)와 띄운다
+  const pz = 1.9;
+  put(box(1.9, 0.85, 0.9, MAT.dark), 0, 0.43, pz, g);                       // 베드
+  put(box(1.75, 0.06, 0.8, MAT.steel), 0, 0.88, pz, g);                     // 하형(헤밍 다이)
+  for (const x of [-1.05, 1.05]) put(box(0.22, 2.7, 0.5, MAT.accent), x, 1.35, pz, g);   // 문형 기둥
+  put(box(2.35, 0.4, 0.6, MAT.accent), 0, 2.85, pz, g);                     // 크라운
+  const ram = put(new THREE.Group(), 0, 2.2, pz, g);
+  put(box(1.55, 0.35, 0.8, MAT.steel), 0, 0, 0, ram);
+  put(box(1.45, 0.06, 0.74, MAT.dark), 0, -0.2, 0, ram);
+  for (const x of [-1.3, 1.3]) put(box(0.06, 1.4, 0.45, MAT.yellow), x, 0.95, pz + 0.15, g);   // 측면 라이트 커튼 기둥
+  return { ram, ramY: 2.2, ramDown: 1.25, press: { x: 0, z: pz } };
+}
+
 // C07 NG·재작업: 재작업 작업대 · 격리 랙(빨강, 폐기 판넬이 쌓임) · 재검 게이지
 function buildRework(g) {
   put(box(1.4, 0.85, 0.7, MAT.dark), 0.2, 0.43, 2.0, g); put(box(1.3, 0.04, 0.6, MAT.steel), 0.2, 0.87, 2.0, g);
@@ -1476,7 +1519,7 @@ const BUILDERS = {
   cnc: buildCNC, press: buildPress, laser: buildLaser, weld: buildWeld, assembly: buildAssembly,
   paint: buildPaint, vision: buildVision, test: buildTest, pack: buildPack, source: buildSource, sink: buildSink,
   sort: buildSort, pressfit: buildPressFit, screw: buildScrew, fasten: buildFasten,
-  kit: buildSort, locate: buildLocate, spot: buildSpot, seal: buildSeal, hem: buildPress, mount: buildFasten, rework: buildRework,
+  kit: buildSort, locate: buildLocate, spot: buildSpot, seal: buildSeal, hem: buildHem, mount: buildMount, rework: buildRework,
 };
 
 // ── 메인 뷰 ─────────────────────────────
@@ -2066,7 +2109,7 @@ export class FactoryView {
     for (const st of [...sim.stations, ...sim.standby]) {
       const g = new THREE.Group(); g.position.set(st.x, 0, st.z); g.rotation.y = st.rot;
       g.scale.z = st.def.side ?? 1;
-      st.zone = sim.zone;
+      st.zone = sim.zone; st.useAMR = sim.useAMR;
       st.vla = mode === 'dark';   // 피지컬AI: 카메라 기반 VLA로 선반에서 부품을 집어 조립·체결
       if (sim.useAMR) cellBase(g, st.type === 'source' || st.type === 'sink' ? 3.6 : 4.6);
       else this.conveyorTex.push(stationBase(g, st.type === 'source' || st.type === 'sink' ? 3.6 : 4.2).map);
@@ -2760,7 +2803,12 @@ export class FactoryView {
         stepSparks(parts.mist, busy, { x: Math.sin(w) * 0.5, y: BELT_Y + 0.9, z: 0 }, rdt, 1.0, -1.5);
         break;
       }
-      case 'hem':
+      case 'hem': {
+        // 로봇이 판넬을 프레스에 넣은 뒤(진행 35~80%) 램이 내려와 헤밍
+        const k = busy && p > 0.35 && p < 0.8 ? Math.max(0, Math.sin(((p - 0.35) / 0.45) * Math.PI)) : 0;
+        parts.ram.position.y = parts.ramY - k * (parts.ramY - parts.ramDown);
+        break;
+      }
       case 'press': {
         const k = busy ? Math.max(0, Math.sin(p * Math.PI * 2 - Math.PI / 2)) : 0;
         parts.ram.position.y = 2.8 - k * 1.1;
@@ -2826,7 +2874,10 @@ export class FactoryView {
         parts.screen.emissive.setHex(st.state === 'DOWN' ? 0xff3030 : down ? 0xf5b82e : 0x3ddc84);
         break;
       }
-      case 'mount':
+      case 'mount': {
+        parts.screen.emissive.setHex(st.state === 'DOWN' ? 0xff3030 : busy && p > 0.55 && p < 0.85 && Math.sin(t * 10) > 0 ? 0xf5b82e : 0x3ddc84);   // 체결 중 토크 판정
+        break;
+      }
       case 'fasten': {
         const down = busy && p > 0.2 && p < 0.85;
         // 너트러너가 내려와 있는 동안 로봇은 팔을 접고 기다린다 (헤드와 간섭 방지)
@@ -2924,7 +2975,7 @@ export class FactoryView {
   animVLA(r, st, busy, p, i) {
     const V = r.vla, s = r.scale, A = r.arm;
     const th = r.root.rotation.y, c = Math.cos(th), sn = Math.sin(th);
-    const ik = (x, y, z) => { const dx = x - r.slot.x, dz = z - r.slot.z; return armIK(s, dx * c - dz * sn, y - 0.15, dx * sn + dz * c); };
+    const ik = (x, y, z) => { const dx = x - r.slot.x, dz = z - r.slot.z; return armIK(s, dx * c - dz * sn, y - r.root.position.y, dx * sn + dz * c); };   // 받침대 높이 반영
     const wx = r.slot.x * 0.3, wz = r.slot.z * 0.22, wy = 1.3;   // 대상물(AMR 위)에서 로봇 쪽 가장자리
     const K = r.vlaKeys ??= {
       shelfUp: ik(V.shelf.x, V.shelf.y + 0.32, V.shelf.z), grab: ik(V.shelf.x, V.shelf.y + 0.03, V.shelf.z),
@@ -2993,13 +3044,17 @@ export class FactoryView {
       A.queue = Math.min(A.queue, 3);   // 고속 재생에서 밀리면 앞 사이클은 건너뛴다
       const ax = A.ax ?? 0, rz = A.az ?? A.sd * PALLET_ARM.z, s = PALLET_ARM.s;
       const home = armIK(s, 0.5, 1.9, -A.sd * 0.6);
-      if (!A.cyc && A.queue > 0 && parts.auto.visible) {
+      // 다른 적재 로봇 팔이 아직 집기 구역(AMR 위)에 있으면 내려가지 않고 기다린다 — 고속 재생에서 화면이 시뮬레이션보다 늦어도 두 팔이 만나지 않게
+      const other = Object.values(parts.arms).find((o) => o !== A), busyZone = other?.cyc && other.cyc.t < SINK_PICK.clear;
+      if (!A.cyc && A.queue > 0 && parts.auto.visible && !busyZone) {
         A.queue--;
         const arr = parts.zoneStacks[k], idx = Math.max(0, Math.min(arr.length - 1, sim.fgBy[k] + (sim.zone ? 0 : -A.queue - 1)));   // 놓을 자리 = 다음 칸 (구분 적재장은 집기 전이라 아직 안 셈)
         const b = arr[idx].position, topY = 0.9 + 0.5;   // AMR 지그 위 박스 윗면
         const pick = armIK(s, -ax, topY, -rz), pickUp = armIK(s, -ax, topY + 0.6, -rz);
         const place = armIK(s, b.x - ax, b.y + 0.25, b.z - rz), placeUp = armIK(s, b.x - ax, b.y + 0.95, b.z - rz);
-        A.cyc = { t: 0, keys: [[0, home], [0.22, pickUp], [0.32, pick], [0.42, pickUp], [0.7, placeUp], [0.8, place], [0.9, placeUp], [1, home]], placed: false, grabBase: sim.stats.grabBy?.[k] ?? 0 };
+        // AMR 위 → 팔레트로 돌 때는 팔을 접고(반경 0.6m) 돈다 — 편 채로 돌면 옆 적재 로봇 쪽을 쓸고 지나간다
+        const fold = (x, z) => { const r = Math.hypot(x, z) || 1; return armIK(s, (x / r) * 0.6, topY + 0.6, (z / r) * 0.6); };
+        A.cyc = { t: 0, keys: [[0, home], [0.22, pickUp], [0.32, pick], [0.42, pickUp], [0.5, fold(-ax, -rz)], [0.6, fold(b.x - ax, b.z - rz)], [0.7, placeUp], [0.8, place], [0.9, placeUp], [1, home]], placed: false, grabBase: sim.stats.grabBy?.[k] ?? 0 };
       } else if (!A.cyc && !parts.auto.visible) A.queue = 0;
       let q = home;
       if (A.cyc) {

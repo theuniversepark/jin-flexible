@@ -37,7 +37,10 @@ console.log('== NG → C07 재작업 → 재검');
   const c07 = s.stations.find((x) => x.id === 'C07');
   check('검사 NG가 폐기 대신 C07로 분기', (s.stats.ng ?? 0) > 0 && c07.c.processed > 0, `NG ${s.stats.ng} · C07 처리 ${c07.c.processed}`);
   check('재작업 성공분은 양품으로 출하', (s.stats.reworkOk ?? 0) > 0 && (s.stats.reworkOk ?? 0) <= (s.stats.reworked ?? 0), `재작업 ${s.stats.reworked} · 성공 ${s.stats.reworkOk}`);
-  check('재작업 성공률 ≈ 단계 설정값', (s.stats.reworkOk ?? 0) / Math.max(1, s.stats.reworked) > MODES.smart.reworkRate - 0.15); }
+  check('재작업 성공률 ≈ 단계 설정값', (s.stats.reworkOk ?? 0) / Math.max(1, s.stats.reworked) > MODES.smart.reworkRate - 0.15);
+  const sink = s.stations.at(-1), fromC07 = sink.ins.find((c) => c.from.id === 'C07');
+  check('재작업품이 C08 구분 적재장에 적재된다 (C07 → C08 경로에 멈춰 쌓이지 않음)', (s.stats.reworkShipped ?? 0) >= (s.stats.reworkOk ?? 0) - 2 && fromC07.items.length <= 2, `재작업 성공 ${s.stats.reworkOk} · 적재 ${s.stats.reworkShipped ?? 0} · C07 → C08 대기 ${fromC07.items.length}대`);
+  check('NG가 많아도 라인이 멈추지 않는다 (양품 출하 계속)', s.stats.good > 40, `양품 ${s.stats.good}`); }
 
 console.log('== 단계별 제품 전환 · LOT (1:1 혼류, 2시간)');
 { const R = Object.fromEntries(['traditional', 'smart', 'dark'].map((m) => [m, run(m, '1:1', 7200, 4)]));
